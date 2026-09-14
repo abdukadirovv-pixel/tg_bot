@@ -16,12 +16,14 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-# Configuration Details
-BOT_TOKEN = "8741655203:AAHMqMozxrl-qYsbkG_RKOPrwRSH512gNT8"
-MAIN_CHANNEL_ID = -1003871503746   # Main Channel ID
-VAULT_CHANNEL_ID = -1004439489795  # Vault Channel ID
-ADMIN_USER_ID = 8780228920         # Your Admin Telegram User ID
-CHANNEL_INVITE_LINK = "https://t.me/+twkHr9N5_wAzOWYy" # Your Private Main Channel Link
+# Import secrets and settings from local config.py
+from config import (
+    BOT_TOKEN,
+    MAIN_CHANNEL_ID,
+    VAULT_CHANNEL_ID,
+    ADMIN_USER_ID,
+    CHANNEL_INVITE_LINK,
+)
 
 # --- Timetable Configuration (10-B Aniq Schedule) ---
 DAY_CODES = ["du", "se", "ch", "pa", "ju"]

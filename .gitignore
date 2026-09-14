@@ -1,0 +1,4 @@
+vault.db
+__pycache__/
+.env
+config.py
