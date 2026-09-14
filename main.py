@@ -395,10 +395,19 @@ async def cmd_post_to_channel(message: types.Message):
         await message.answer(f"❌ Broadcast failed: {e}")
 
 # ----------------------------------------------------
-# 4. VAULT CHANNEL INDEXING
+# 4. VAULT CHANNEL INDEXING (UPDATED WITH LOGGING & FLEXIBLE ID)
 # ----------------------------------------------------
-@dp.channel_post(F.chat.id == VAULT_CHANNEL_ID)
+@dp.channel_post()
 async def index_vault_post(post: types.Message):
+    # Normalize channel comparison (handles both positive and -100 formats)
+    target_id = str(VAULT_CHANNEL_ID).replace("-100", "")
+    current_chat_id = str(post.chat.id).replace("-100", "")
+
+    logging.info(f"Received channel post from Chat ID: {post.chat.id} (Expected: {VAULT_CHANNEL_ID})")
+
+    if target_id != current_chat_id:
+        return
+
     file_id, file_type = None, None
     if post.document:
         file_id, file_type = post.document.file_id, "document"
@@ -410,21 +419,20 @@ async def index_vault_post(post: types.Message):
     if file_id:
         code = generate_passcode()
         save_file(code, file_id, file_type)
-        
         passcode_text = f"🔑 **Vault Passcode:** `{code}`"
         
         try:
             if post.caption:
                 new_caption = f"{post.caption}\n\n{passcode_text}"
                 await bot.edit_message_caption(
-                    chat_id=VAULT_CHANNEL_ID,
+                    chat_id=post.chat.id,
                     message_id=post.message_id,
                     caption=new_caption,
                     parse_mode="Markdown"
                 )
             else:
                 await bot.edit_message_caption(
-                    chat_id=VAULT_CHANNEL_ID,
+                    chat_id=post.chat.id,
                     message_id=post.message_id,
                     caption=passcode_text,
                     parse_mode="Markdown"
@@ -433,12 +441,11 @@ async def index_vault_post(post: types.Message):
         except Exception as e:
             logging.error(f"Failed to edit caption, sending reply message instead: {e}")
             await bot.send_message(
-                chat_id=VAULT_CHANNEL_ID,
+                chat_id=post.chat.id,
                 text=passcode_text,
                 reply_to_message_id=post.message_id,
                 parse_mode="Markdown"
             )
-
 # ----------------------------------------------------
 # 5. DM RETRIEVAL
 # ----------------------------------------------------
