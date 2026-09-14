@@ -47,7 +47,6 @@ DAY_NAMES = {
     "ju": "Juma (Friday)",
 }
 
-# Map Python weekdays (0=Mon, 1=Tue... 4=Fri) to day codes
 WEEKDAY_TO_CODE = {0: "du", 1: "se", 2: "ch", 3: "pa", 4: "ju"}
 
 TIMETABLE = {
@@ -112,10 +111,9 @@ REMINDER_HOUR = 8
 REMINDER_MINUTE = 45
 
 # --- Database Setup ---
-conn = sqlite3.connect("vault.db")
+conn = sqlite3.connect("vault.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# Files table
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS files (
         passcode TEXT PRIMARY KEY,
@@ -125,7 +123,6 @@ cursor.execute("""
     )
 """)
 
-# Reminders table
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS reminders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,13 +197,14 @@ def format_day_schedule(day_code: str) -> str:
 
 # --- Channel Membership Verification Helper ---
 async def is_channel_member(bot: Bot, user_id: int) -> bool:
-    if user_id == ADMIN_USER_ID:
+    if user_id == ADMIN_USER_ID or MAIN_CHANNEL_ID == 0:
         return True
     try:
         member = await bot.get_chat_member(chat_id=MAIN_CHANNEL_ID, user_id=user_id)
         return member.status in ["creator", "administrator", "member"]
-    except Exception:
-        return False
+    except Exception as e:
+        logging.error(f"Error checking channel membership for user {user_id}: {e}")
+        return True
 
 # --- Bot Initialization ---
 bot = Bot(token=BOT_TOKEN)
@@ -223,7 +221,7 @@ async def background_scheduler():
         current_time_str = now.strftime("%H:%M")
         current_date_str = now.strftime("%Y-%m-%d")
         minute_key = f"{current_date_str}_{current_time_str}"
-        weekday = now.weekday()  # 0=Monday, 4=Friday, 5=Saturday, 6=Sunday
+        weekday = now.weekday()
 
         # 1. Process custom user reminders
         due_reminders = get_due_reminders()
@@ -235,7 +233,7 @@ async def background_scheduler():
             finally:
                 delete_reminder(rem_id)
 
-        # 2. Automated School Day Alerts (Monday - Friday)
+        # 2. Automated School Day Alerts
         if weekday in WEEKDAY_TO_CODE and minute_key != last_processed_minute:
             day_code = WEEKDAY_TO_CODE[weekday]
             today_lessons = TIMETABLE[day_code]
@@ -248,14 +246,13 @@ async def background_scheduler():
                 except Exception as e:
                     logging.error(f"Morning alert error: {e}")
 
-            # Check lesson end times & school end notifications
+            # Lesson end time checks
             for idx, bell in enumerate(BELL_SCHEDULE):
                 lesson_num = bell["lesson"]
                 lesson_end_time = bell["end"]
                 lesson_info = today_lessons[idx] if idx < len(today_lessons) else None
 
                 if current_time_str == lesson_end_time:
-                    # Check if this was the last active lesson of the day
                     is_last_lesson = (
                         idx == len(BELL_SCHEDULE) - 1 or 
                         (idx < len(today_lessons) - 1 and today_lessons[idx + 1] is None)
@@ -270,7 +267,6 @@ async def background_scheduler():
                         except Exception as e:
                             logging.error(f"Lesson end alert error: {e}")
 
-                    # If school is over, send the final end message
                     if is_last_lesson:
                         end_msg = "🎉 **Bugungi darslar yakunlandi! Maktab kuni tugadi. Maroqli hordiq chiqaring!**"
                         try:
@@ -399,7 +395,7 @@ async def cmd_post_to_channel(message: types.Message):
         await message.answer(f"❌ Broadcast failed: {e}")
 
 # ----------------------------------------------------
-# 4. VAULT CHANNEL: Auto-generate code on upload
+# 4. VAULT CHANNEL INDEXING
 # ----------------------------------------------------
 @dp.channel_post(F.chat.id == VAULT_CHANNEL_ID)
 async def index_vault_post(post: types.Message):
@@ -423,43 +419,23 @@ async def index_vault_post(post: types.Message):
                 caption=caption,
                 parse_mode="Markdown"
             )
+            logging.info(f"Indexed new file with passcode: {code}")
         except Exception as e:
             logging.error(f"Failed to edit vault caption: {e}")
 
 # ----------------------------------------------------
-# 5. MAIN CHANNEL: Auto-approve join requests
-# ----------------------------------------------------
-@dp.chat_join_request(F.chat.id == MAIN_CHANNEL_ID)
-async def approve_main_channel_join(request: types.ChatJoinRequest):
-    await request.approve()
-    try:
-        await bot.send_message(
-            chat_id=request.from_user.id,
-            text=(
-                f"🎉 **Welcome to {request.chat.title}!**\n\n"
-                f"Your request to join was approved.\n"
-                f"Send your file passcode (e.g., `DOC-XXXXXX`) directly to me here in DM to access files."
-            ),
-            parse_mode="Markdown"
-        )
-    except Exception:
-        pass
-
-# ----------------------------------------------------
-# 6. DM RETRIEVAL WITH MEMBERSHIP VERIFICATION
+# 5. DM RETRIEVAL
 # ----------------------------------------------------
 @dp.message(F.chat.type == "private", ~F.text.startswith("/"))
 async def dm_file_retrieval(message: types.Message):
     user_id = message.from_user.id
     
-    # Membership Check Guard
     if not await is_channel_member(bot, user_id):
         join_btn = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 Join Main Channel", url=CHANNEL_INVITE_LINK)]
         ])
         await message.answer(
-            "🔒 **Access Restricted!**\n\n"
-            "You must be a subscriber of our Main Channel to retrieve vault files.",
+            "🔒 **Access Restricted!**\n\nYou must be a subscriber of our Main Channel to retrieve vault files.",
             reply_markup=join_btn
         )
         return
@@ -471,17 +447,21 @@ async def dm_file_retrieval(message: types.Message):
         file_id, file_type, _ = file_data
         increment_download(query_code)
         
-        if file_type == "document":
-            await message.answer_document(document=file_id, caption=f"📄 Access Granted (`{query_code}`)")
-        elif file_type == "photo":
-            await message.answer_photo(photo=file_id, caption=f"🖼 Access Granted (`{query_code}`)")
-        elif file_type == "video":
-            await message.answer_video(video=file_id, caption=f"🎥 Access Granted (`{query_code}`)")
+        try:
+            if file_type == "document":
+                await message.answer_document(document=file_id, caption=f"📄 Access Granted (`{query_code}`)", parse_mode="Markdown")
+            elif file_type == "photo":
+                await message.answer_photo(photo=file_id, caption=f"🖼 Access Granted (`{query_code}`)", parse_mode="Markdown")
+            elif file_type == "video":
+                await message.answer_video(video=file_id, caption=f"🎥 Access Granted (`{query_code}`)", parse_mode="Markdown")
+        except Exception as e:
+            logging.error(f"Failed to send file {query_code}: {e}")
+            await message.answer("❌ Error sending the requested file from Telegram servers.")
     else:
-        await message.answer("❌ Invalid passcode. Please check the code and try again.")
+        await message.answer(f"❌ Invalid passcode (`{query_code}`). Please check the code and try again.", parse_mode="Markdown")
 
 # ----------------------------------------------------
-# 7. INLINE RETRIEVAL WITH MEMBERSHIP VERIFICATION
+# 6. INLINE RETRIEVAL WITH MEMBERSHIP VERIFICATION
 # ----------------------------------------------------
 @dp.inline_query()
 async def inline_file_retrieval(inline_query: types.InlineQuery):
@@ -520,7 +500,7 @@ async def inline_file_retrieval(inline_query: types.InlineQuery):
     await bot.answer_inline_query(inline_query.id, results=results, cache_time=1)
 
 # ----------------------------------------------------
-# 8. REMINDER & START COMMANDS
+# 7. REMINDER & START COMMANDS
 # ----------------------------------------------------
 @dp.message(Command("remind"))
 async def cmd_remind(message: types.Message):
