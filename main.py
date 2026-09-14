@@ -411,17 +411,33 @@ async def index_vault_post(post: types.Message):
         code = generate_passcode()
         save_file(code, file_id, file_type)
         
-        caption = f"{post.caption or ''}\n\n🔑 **Vault Passcode:** `{code}`".strip()
+        passcode_text = f"🔑 **Vault Passcode:** `{code}`"
+        
         try:
-            await bot.edit_message_caption(
+            if post.caption:
+                new_caption = f"{post.caption}\n\n{passcode_text}"
+                await bot.edit_message_caption(
+                    chat_id=VAULT_CHANNEL_ID,
+                    message_id=post.message_id,
+                    caption=new_caption,
+                    parse_mode="Markdown"
+                )
+            else:
+                await bot.edit_message_caption(
+                    chat_id=VAULT_CHANNEL_ID,
+                    message_id=post.message_id,
+                    caption=passcode_text,
+                    parse_mode="Markdown"
+                )
+            logging.info(f"Successfully generated code: {code}")
+        except Exception as e:
+            logging.error(f"Failed to edit caption, sending reply message instead: {e}")
+            await bot.send_message(
                 chat_id=VAULT_CHANNEL_ID,
-                message_id=post.message_id,
-                caption=caption,
+                text=passcode_text,
+                reply_to_message_id=post.message_id,
                 parse_mode="Markdown"
             )
-            logging.info(f"Indexed new file with passcode: {code}")
-        except Exception as e:
-            logging.error(f"Failed to edit vault caption: {e}")
 
 # ----------------------------------------------------
 # 5. DM RETRIEVAL
