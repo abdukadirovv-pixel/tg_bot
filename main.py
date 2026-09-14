@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import random
 import sqlite3
 import string
@@ -16,14 +17,24 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-# Import secrets and settings from local config.py
-from config import (
-    BOT_TOKEN,
-    MAIN_CHANNEL_ID,
-    VAULT_CHANNEL_ID,
-    ADMIN_USER_ID,
-    CHANNEL_INVITE_LINK,
-)
+# Load configuration: priority given to Railway environment variables, fallback to local config.py
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+MAIN_CHANNEL_ID = int(os.getenv("MAIN_CHANNEL_ID", 0))
+VAULT_CHANNEL_ID = int(os.getenv("VAULT_CHANNEL_ID", 0))
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
+CHANNEL_INVITE_LINK = os.getenv("CHANNEL_INVITE_LINK", "")
+
+if not BOT_TOKEN:
+    try:
+        from config import (
+            BOT_TOKEN,
+            MAIN_CHANNEL_ID,
+            VAULT_CHANNEL_ID,
+            ADMIN_USER_ID,
+            CHANNEL_INVITE_LINK,
+        )
+    except ImportError:
+        raise ValueError("BOT_TOKEN is missing! Set it in Railway variables or create a local config.py file.")
 
 # --- Timetable Configuration (10-B Aniq Schedule) ---
 DAY_CODES = ["du", "se", "ch", "pa", "ju"]
